@@ -4,9 +4,9 @@ mapboxgl.accessToken = 'pk.eyJ1IjoicnVra3UiLCJhIjoiZEJocE9tSSJ9.tWSIxlu5AHgccim4
 // initialize a Mapbox map with the Basic style, centered in New York
 var map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/mapbox/streets-v12',
-    center: [-73.992, 40.734],
-    zoom: 12,
+    style: 'mapbox://styles/mapbox/navigation-day-v1',
+    center: [121.0437, 14.6760],
+    zoom: 11,
     hash: true
 });
 
@@ -198,9 +198,13 @@ map.on('load', function () {
         id: 'boundary-line',
         type: 'line',
         source: 'boundary',
+        layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+        },
         paint: {
             'line-color': '#ff0000',
-            'line-width': 2,
+            'line-width': 4,
             'line-opacity': 0.8
         }
     });
