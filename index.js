@@ -1,10 +1,10 @@
 // my personal token - please generate your own at https://www.mapbox.com/studio/
-mapboxgl.accessToken = 'pk.eyJ1IjoibW91cm5lciIsImEiOiJWWnRiWG1VIn0.j6eccFHpE3Q04XPLI7JxbA';
+mapboxgl.accessToken = 'pk.eyJ1IjoicnVra3UiLCJhIjoiZEJocE9tSSJ9.tWSIxlu5AHgccim4JMuWLQ';
 
 // initialize a Mapbox map with the Basic style, centered in New York
 var map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/mapbox/cjf4m44iw0uza2spb3q0a7s41',
+    style: 'mapbox://styles/mapbox/streets-v12',
     center: [-73.992, 40.734],
     zoom: 12,
     hash: true
@@ -25,6 +25,80 @@ if (window.devicePixelRatio > 1) {
     ctx.scale(2, 2);
 }
 
+var roadLayers = []; // style layer IDs that render from the 'road' source-layer
+var lguIndex = [];   // [{bbox: [w,s,e,n], feature}, ...] — built on dataset load
+
+var currentBoundary = null; // GeoJSON Feature<Polygon|MultiPolygon>
+var currentBoundaryName = '';
+
+function pointInPolygon(point, feature) {
+    var polys = feature.geometry.type === 'Polygon'
+        ? [feature.geometry.coordinates]
+        : feature.geometry.coordinates;
+    var x = point[0], y = point[1];
+    for (var p = 0; p < polys.length; p++) {
+        var inside = false;
+        var rings = polys[p];
+        for (var ri = 0; ri < rings.length; ri++) {
+            var ring = rings[ri];
+            for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                if (((ring[i][1] > y) !== (ring[j][1] > y)) &&
+                    x < (ring[j][0] - ring[i][0]) * (y - ring[i][1]) / (ring[j][1] - ring[i][1]) + ring[i][0]) {
+                    inside = !inside;
+                }
+            }
+        }
+        if (inside) return true;
+    }
+    return false;
+}
+
+function isCenterInCurrentBoundary() {
+    if (!currentBoundary) return false;
+    var c = map.getCenter();
+    return pointInPolygon([c.lng, c.lat], currentBoundary);
+}
+
+function computeBBox(feature) {
+    var coords = feature.geometry.type === 'Polygon'
+        ? feature.geometry.coordinates.flat(1)
+        : feature.geometry.coordinates.flat(2);
+    var w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+    for (var i = 0; i < coords.length; i++) {
+        if (coords[i][0] < w) w = coords[i][0];
+        if (coords[i][1] < s) s = coords[i][1];
+        if (coords[i][0] > e) e = coords[i][0];
+        if (coords[i][1] > n) n = coords[i][1];
+    }
+    return [w, s, e, n];
+}
+
+function findLGU(lng, lat) {
+    for (var i = 0; i < lguIndex.length; i++) {
+        var b = lguIndex[i].bbox;
+        if (lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3]) {
+            if (pointInPolygon([lng, lat], lguIndex[i].feature)) {
+                return lguIndex[i].feature;
+            }
+        }
+    }
+    return null;
+}
+
+function updateCurrentBoundary() {
+    var c = map.getCenter();
+    var found = findLGU(c.lng, c.lat);
+    currentBoundary = found || null;
+    currentBoundaryName = found ? (found.properties.shapeName || '') : '';
+    updateBoundaryLayer();
+}
+
+function updateBoundaryLayer() {
+    var src = map.getSource('boundary');
+    if (src) src.setData(currentBoundary || { type: 'FeatureCollection', features: [] });
+    document.getElementById('boundary-name').textContent = currentBoundaryName;
+}
+
 function updateOrientations() {
     ctx.clearRect(0, 0, h, h);
 
@@ -33,7 +107,7 @@ function updateOrientations() {
     ctx.arc(r, r, r, 0, 2 * Math.PI, false);
     ctx.fill();
 
-    var features = map.queryRenderedFeatures({layers: ['road']});
+    var features = map.queryRenderedFeatures({layers: roadLayers});
     if (features.length === 0) return;
 
     var ruler = cheapRuler(map.getCenter().lat);
@@ -44,17 +118,34 @@ function updateOrientations() {
 
     for (var i = 0; i < features.length; i++) {
         var geom = features[i].geometry;
+        if (!geom || (geom.type !== 'LineString' && geom.type !== 'MultiLineString')) continue;
         var lines = geom.type === 'LineString' ? [geom.coordinates] : geom.coordinates;
 
-        // clip lines to screen bbox for more exact analysis
         var clippedLines = [];
-        for (var j = 0; j < lines.length; j++) {
-            clippedLines.push.apply(clippedLines, lineclip(lines[j], bbox));
+        if (currentBoundary) {
+            for (var j = 0; j < lines.length; j++) {
+                var coords = lines[j].filter(Boolean), segment = [];
+                for (var k = 0; k < coords.length; k++) {
+                    if (pointInPolygon(coords[k], currentBoundary)) {
+                        segment.push(coords[k]);
+                    } else {
+                        if (segment.length > 1) clippedLines.push(segment);
+                        segment = [];
+                    }
+                }
+                if (segment.length > 1) clippedLines.push(segment);
+            }
+        } else {
+            for (var j = 0; j < lines.length; j++) {
+                var coords = lines[j].filter(Boolean);
+                if (coords.length > 1) {
+                    clippedLines.push.apply(clippedLines, lineclip(coords, bbox));
+                }
+            }
         }
 
-        // update orientation bins from each clipped line
-        for (j = 0; j < clippedLines.length; j++) {
-            analyzeLine(bins, ruler, clippedLines[j], features[i].properties.oneway !== 'true');
+        for (var l = 0; l < clippedLines.length; l++) {
+            analyzeLine(bins, ruler, clippedLines[l], features[i].properties.oneway !== 'true');
         }
     }
 
@@ -95,8 +186,43 @@ function interpolateSinebow(t) {
 }
 
 map.on('load', function () {
-    updateOrientations();
+    roadLayers = map.getStyle().layers
+        .filter(function(l) { return l['source-layer'] === 'road'; })
+        .map(function(l) { return l.id; });
+
+    map.addSource('boundary', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+    });
+    map.addLayer({
+        id: 'boundary-line',
+        type: 'line',
+        source: 'boundary',
+        paint: {
+            'line-color': '#ff0000',
+            'line-width': 2,
+            'line-opacity': 0.8
+        }
+    });
+
+    updateOrientations(); // immediate render, no boundary yet
+
+    fetch('geoBoundaries-PHL-ADM3_simplified.geojson')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            lguIndex = data.features.map(function(f) {
+                return { bbox: computeBBox(f), feature: f };
+            });
+            updateCurrentBoundary();
+            updateOrientations();
+        });
+
     // update the chart on moveend; we could do that on move,
     // but this is slow on some zoom levels due to a huge amount of roads
-    map.on('moveend', updateOrientations);
+    map.on('moveend', function () {
+        if (!isCenterInCurrentBoundary()) {
+            updateCurrentBoundary();
+        }
+        updateOrientations();
+    });
 });

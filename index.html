@@ -4,8 +4,8 @@
 <title>Road Orientations Interactive Map</title>
 <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
 
-<script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.46.0/mapbox-gl-dev.js'></script>
-<link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.46.0/mapbox-gl.css' rel='stylesheet' />
+<script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+<link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
 
 <script src='https://unpkg.com/cheap-ruler@2.5.1/cheap-ruler.js'></script>
 <script src='https://bundle.run/lineclip@1.1.5'></script>
@@ -14,6 +14,17 @@
 body { margin: 0; padding: 0; }
 #map { position: absolute; width: 100%; height: 100%; }
 #canvas { position: absolute; top: 10px; right: 10px; }
+#boundary-name {
+    position: absolute; top: 320px; right: 10px;
+    background: rgba(255,255,255,0.8);
+    padding: 2px 6px;
+    font: 11px/16px "Helvetica Neue", sans-serif;
+    color: #333;
+    width: 288px;
+    text-align: center;
+    border-radius: 2px;
+    box-sizing: border-box;
+}
 #about {
     padding: 2px 5px; background: rgba(255,255,255,0.7); position: absolute; top: 0; left: 0;
     color: #07f; font: 12px/20px "Helvetica Neue", sans-serif; text-decoration: none; }
@@ -23,6 +34,7 @@ body { margin: 0; padding: 0; }
 <body>
 <div id="map"></div>
 <canvas id="canvas"></canvas>
+<div id="boundary-name"></div>
 <a id="about" href="https://github.com/mourner/road-orientation-map">About & Source Code</a>
 
 <script src="index.js"></script>
