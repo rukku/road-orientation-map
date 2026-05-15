@@ -10,7 +10,7 @@ var map = new mapboxgl.Map({
     hash: true
 });
 
-var h = 300; // size of the chart canvas
+var h = 400; // size of the chart canvas
 var r = h / 2; // radius of the polar histogram
 var numBins = 64; // number of orientation bins spread around 360 deg.
 
