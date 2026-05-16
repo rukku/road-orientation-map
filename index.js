@@ -4,7 +4,7 @@ mapboxgl.accessToken = 'pk.eyJ1IjoicnVra3UiLCJhIjoiZEJocE9tSSJ9.tWSIxlu5AHgccim4
 // initialize a Mapbox map with the Basic style, centered in New York
 var map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/mapbox/navigation-day-v1',
+    style: 'mapbox://styles/mapbox/dark-v11',
     center: [121.0437, 14.6760],
     zoom: 11,
     hash: true
@@ -206,6 +206,14 @@ map.on('load', function () {
         .filter(function(l) { return l['source-layer'] === 'road'; })
         .map(function(l) { return l.id; });
 
+    map.getStyle().layers.forEach(function(l) {
+        if (l.type === 'symbol') {
+            map.setLayoutProperty(l.id, 'visibility', 'none');
+        } else if (l['source-layer'] === 'road' && l.type === 'line') {
+            map.setPaintProperty(l.id, 'line-color', '#ffffff');
+        }
+    });
+
     map.addSource('mask', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] }
@@ -214,7 +222,7 @@ map.on('load', function () {
         id: 'boundary-mask',
         type: 'fill',
         source: 'mask',
-        paint: { 'fill-color': '#000', 'fill-opacity': 0.4 }
+        paint: { 'fill-color': '#000', 'fill-opacity': 0.75 }
     });
 
     map.addSource('boundary', {
