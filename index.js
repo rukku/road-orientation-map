@@ -93,9 +93,25 @@ function updateCurrentBoundary() {
     updateBoundaryLayer();
 }
 
+function buildMask(boundary) {
+    if (!boundary) return { type: 'FeatureCollection', features: [] };
+    var world = [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]];
+    var polys = boundary.geometry.type === 'Polygon'
+        ? [boundary.geometry.coordinates]
+        : boundary.geometry.coordinates;
+    var holes = polys.map(function(p) { return p[0]; });
+    return {
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'Polygon', coordinates: [world].concat(holes) }
+    };
+}
+
 function updateBoundaryLayer() {
     var src = map.getSource('boundary');
     if (src) src.setData(currentBoundary || { type: 'FeatureCollection', features: [] });
+    var mask = map.getSource('mask');
+    if (mask) mask.setData(buildMask(currentBoundary));
     document.getElementById('boundary-name').textContent = currentBoundaryName;
 }
 
@@ -190,6 +206,17 @@ map.on('load', function () {
         .filter(function(l) { return l['source-layer'] === 'road'; })
         .map(function(l) { return l.id; });
 
+    map.addSource('mask', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+    });
+    map.addLayer({
+        id: 'boundary-mask',
+        type: 'fill',
+        source: 'mask',
+        paint: { 'fill-color': '#000', 'fill-opacity': 0.4 }
+    });
+
     map.addSource('boundary', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] }
@@ -203,7 +230,7 @@ map.on('load', function () {
             'line-cap': 'round'
         },
         paint: {
-            'line-color': '#ff0000',
+            'line-color': '#06b6d4',
             'line-width': 4,
             'line-opacity': 0.8
         }
