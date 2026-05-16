@@ -118,19 +118,20 @@ function updateBoundaryLayer() {
 function updateOrientations() {
     ctx.clearRect(0, 0, h, h);
 
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.beginPath();
-    ctx.arc(r, r, r, 0, 2 * Math.PI, false);
-    ctx.fill();
+    var coloredSrc = map.getSource('colored-roads');
+
+    if (!currentBoundary) {
+        if (coloredSrc) coloredSrc.setData({ type: 'FeatureCollection', features: [] });
+        return;
+    }
 
     var features = map.queryRenderedFeatures({layers: roadLayers});
     if (features.length === 0) return;
 
     var ruler = cheapRuler(map.getCenter().lat);
-    var bounds = map.getBounds();
-    var bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
     var bearing = map.getBearing();
     var bins = new Float64Array(numBins);
+    var coloredSegments = [];
 
     for (var i = 0; i < features.length; i++) {
         var geom = features[i].geometry;
@@ -138,39 +139,32 @@ function updateOrientations() {
         var lines = geom.type === 'LineString' ? [geom.coordinates] : geom.coordinates;
 
         var clippedLines = [];
-        if (currentBoundary) {
-            for (var j = 0; j < lines.length; j++) {
-                var coords = lines[j].filter(Boolean), segment = [];
-                for (var k = 0; k < coords.length; k++) {
-                    if (pointInPolygon(coords[k], currentBoundary)) {
-                        segment.push(coords[k]);
-                    } else {
-                        if (segment.length > 1) clippedLines.push(segment);
-                        segment = [];
-                    }
-                }
-                if (segment.length > 1) clippedLines.push(segment);
-            }
-        } else {
-            for (var j = 0; j < lines.length; j++) {
-                var coords = lines[j].filter(Boolean);
-                if (coords.length > 1) {
-                    clippedLines.push.apply(clippedLines, lineclip(coords, bbox));
+        for (var j = 0; j < lines.length; j++) {
+            var coords = lines[j].filter(Boolean), segment = [];
+            for (var k = 0; k < coords.length; k++) {
+                if (pointInPolygon(coords[k], currentBoundary)) {
+                    segment.push(coords[k]);
+                } else {
+                    if (segment.length > 1) clippedLines.push(segment);
+                    segment = [];
                 }
             }
+            if (segment.length > 1) clippedLines.push(segment);
         }
 
         for (var l = 0; l < clippedLines.length; l++) {
-            analyzeLine(bins, ruler, clippedLines[l], features[i].properties.oneway !== 'true');
+            analyzeLine(bins, ruler, clippedLines[l], features[i].properties.oneway !== 'true', coloredSegments);
         }
     }
+
+    if (coloredSrc) coloredSrc.setData({ type: 'FeatureCollection', features: coloredSegments });
 
     var binMax = Math.max.apply(null, bins);
 
     for (i = 0; i < numBins; i++) {
         var a0 = ((i - 0.5) * 360 / numBins - 90 - bearing) * Math.PI / 180;
         var a1 = ((i + 0.5) * 360 / numBins - 90 - bearing) * Math.PI / 180;
-        ctx.fillStyle = interpolateSinebow((2 * i % numBins) / numBins);
+        ctx.fillStyle = binColor(i);
         ctx.beginPath();
         ctx.moveTo(r, r);
         ctx.arc(r, r, r * Math.sqrt(bins[i] / binMax), a0, a1, false);
@@ -179,7 +173,7 @@ function updateOrientations() {
     }
 }
 
-function analyzeLine(bins, ruler, line, isTwoWay) {
+function analyzeLine(bins, ruler, line, isTwoWay, coloredOut) {
     for (var i = 0; i < line.length - 1; i++) {
         var bearing = ruler.bearing(line[i], line[i + 1]);
         var distance = ruler.distance(line[i], line[i + 1]);
@@ -189,6 +183,14 @@ function analyzeLine(bins, ruler, line, isTwoWay) {
 
         bins[k0] += distance;
         if (isTwoWay) bins[k1] += distance;
+
+        if (coloredOut) {
+            coloredOut.push({
+                type: 'Feature',
+                properties: { color: binColor(k0) },
+                geometry: { type: 'LineString', coordinates: [line[i], line[i + 1]] }
+            });
+        }
     }
 }
 
@@ -201,6 +203,18 @@ function interpolateSinebow(t) {
     return 'rgb(' + r + ',' + g + ',' + b + ')';
 }
 
+// 8 discrete orientation colors sampled from sinebow.
+// Roads with opposite bearings share a color (bi-directional symmetry).
+var orientationColors = (function () {
+    var a = [];
+    for (var i = 0; i < 8; i++) a.push(interpolateSinebow(i / 8));
+    return a;
+})();
+
+function binColor(k) {
+    return orientationColors[Math.floor((k % 32) / 4)];
+}
+
 map.on('load', function () {
     roadLayers = map.getStyle().layers
         .filter(function(l) { return l['source-layer'] === 'road'; })
@@ -211,6 +225,24 @@ map.on('load', function () {
             map.setLayoutProperty(l.id, 'visibility', 'none');
         } else if (l['source-layer'] === 'road' && l.type === 'line') {
             map.setPaintProperty(l.id, 'line-color', '#ffffff');
+        }
+    });
+
+    map.addSource('colored-roads', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+    });
+    map.addLayer({
+        id: 'colored-roads-line',
+        type: 'line',
+        source: 'colored-roads',
+        layout: {
+            'line-join': 'round',
+            'line-cap': 'round'
+        },
+        paint: {
+            'line-color': ['get', 'color'],
+            'line-width': 2.5
         }
     });
 
@@ -238,7 +270,7 @@ map.on('load', function () {
             'line-cap': 'round'
         },
         paint: {
-            'line-color': '#06b6d4',
+            'line-color': '#ffffff',
             'line-width': 4,
             'line-opacity': 0.8
         }
