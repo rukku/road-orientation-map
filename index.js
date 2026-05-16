@@ -25,8 +25,40 @@ if (window.devicePixelRatio > 1) {
     ctx.scale(2, 2);
 }
 
+canvas.style.cursor = 'pointer';
+
+canvas.addEventListener('click', function (evt) {
+    var rect = canvas.getBoundingClientRect();
+    var dx = evt.clientX - rect.left - h / 2;
+    var dy = evt.clientY - rect.top - h / 2;
+    if (Math.sqrt(dx * dx + dy * dy) > h / 2) return;
+
+    var angle = Math.atan2(dy, dx) * 180 / Math.PI + 90 + map.getBearing();
+    angle = ((angle % 360) + 360) % 360;
+    var bin = Math.floor(angle * numBins / 360) % numBins;
+    var bucket = Math.floor((bin % 32) / 4);
+
+    selectedBucket = (selectedBucket === bucket) ? null : bucket;
+    applyBucketFilter();
+    updateOrientations();
+});
+
+function applyBucketFilter() {
+    if (!map.getLayer('colored-roads-line')) return;
+    if (selectedBucket === null) {
+        map.setPaintProperty('colored-roads-line', 'line-color', ['get', 'color']);
+    } else {
+        map.setPaintProperty('colored-roads-line', 'line-color', [
+            'case',
+            ['==', ['get', 'bucket'], selectedBucket], ['get', 'color'],
+            '#404040'
+        ]);
+    }
+}
+
 var roadLayers = []; // style layer IDs that render from the 'road' source-layer
 var lguIndex = [];   // [{bbox: [w,s,e,n], feature}, ...] — built on dataset load
+var selectedBucket = null; // 0-7 when a chart wedge is clicked, else null
 
 var currentBoundary = null; // GeoJSON Feature<Polygon|MultiPolygon>
 var currentBoundaryName = '';
@@ -164,6 +196,8 @@ function updateOrientations() {
     for (i = 0; i < numBins; i++) {
         var a0 = ((i - 0.5) * 360 / numBins - 90 - bearing) * Math.PI / 180;
         var a1 = ((i + 0.5) * 360 / numBins - 90 - bearing) * Math.PI / 180;
+        var binBucket = Math.floor((i % 32) / 4);
+        ctx.globalAlpha = (selectedBucket === null || selectedBucket === binBucket) ? 1 : 0.15;
         ctx.fillStyle = binColor(i);
         ctx.beginPath();
         ctx.moveTo(r, r);
@@ -171,6 +205,7 @@ function updateOrientations() {
         ctx.closePath();
         ctx.fill();
     }
+    ctx.globalAlpha = 1;
 }
 
 function analyzeLine(bins, ruler, line, isTwoWay, coloredOut) {
@@ -187,7 +222,7 @@ function analyzeLine(bins, ruler, line, isTwoWay, coloredOut) {
         if (coloredOut) {
             coloredOut.push({
                 type: 'Feature',
-                properties: { color: binColor(k0) },
+                properties: { color: binColor(k0), bucket: Math.floor((k0 % 32) / 4) },
                 geometry: { type: 'LineString', coordinates: [line[i], line[i + 1]] }
             });
         }
